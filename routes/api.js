@@ -1,113 +1,158 @@
 "use strict";
-const mongoose = require("mongoose");
+const { IssueModel } = require("../models/Issue");
 
 module.exports = function (app) {
-  const IssueSchema = new mongoose.Schema({
-    issue_title: { type: String, required: true },
-    issue_text: { type: String, required: true },
-    created_by: { type: String, required: true },
-    assigned_to: { type: String, default: "" },
-    status_text: { type: String, default: "" },
-    created_on: { type: Date, default: Date.now },
-    updated_on: { type: Date, default: Date.now },
-    open: { type: Boolean, default: true },
-  });
-
-  const Issue = mongoose.model("Issue", IssueSchema);
+  IssueModel.deleteMany().exec();
 
   app
     .route("/api/issues/:project")
 
-    .get(async function (req, res) {
+    .get(function (req, res) {
       let project = req.params.project;
-      let filterObj = { ...req.query, project };
+      console.log("GET id:\n\t" + project);
 
-      try {
-        const issues = await Issue.find(filterObj);
-        res.json(issues);
-      } catch (err) {
-        res.json({ error: "could not get issues" });
-      }
+      let params = getParams(req);
+      console.log("GET params:\n\t" + JSON.stringify(params));
+
+      IssueModel.find({ project, ...params }).then((items) => {
+        res.json(items);
+        console.log("GET result:\n\t" + JSON.stringify(items));
+        console.log(
+          "\n--------------------------------------------------------------------\n"
+        );
+      });
     })
 
-    .post(async function (req, res) {
+    .post(function (req, res) {
       let project = req.params.project;
-      const {
-        issue_title,
-        issue_text,
-        created_by,
-        assigned_to = "",
-        status_text = "",
-        open = true,
-      } = req.body;
+      console.log("POST id:\n\t" + project);
 
-      if (!issue_title || !issue_text || !created_by) {
-        return res.json({ error: "required field(s) missing" });
-      }
-
-      const newIssue = new Issue({
-        issue_title,
-        issue_text,
-        created_by,
-        assigned_to,
-        status_text,
-        open,
+      let params = getParams(req);
+      console.log("POST params:\n\t" + JSON.stringify(params));
+      console.log("POST query:\n\t" + JSON.stringify(req.query));
+      let issue = new IssueModel({
+        project: project,
+        issue_title: params.issue_title,
+        issue_text: params.issue_text,
+        created_by: params.created_by,
+        assigned_to: params.assigned_to || "",
+        status_text: params.status_text || "",
       });
 
-      try {
-        const savedIssue = await newIssue.save();
-        res.json(savedIssue);
-      } catch (err) {
-        res.json({ error: "could not create issue" });
-      }
-    })
-
-    .put(async function (req, res) {
-      let project = req.params.project;
-      const { _id, ...updateFields } = req.body;
-
-      if (!_id) {
-        return res.json({ error: "missing _id" });
-      }
-
-      if (Object.keys(updateFields).length === 0) {
-        return res.json({ error: "no update field(s) sent", _id: _id });
-      }
-
-      try {
-        updateFields.updated_on = Date.now();
-        const issue = await Issue.findByIdAndUpdate(_id, updateFields, {
-          new: true,
+      issue
+        .save()
+        .then((item) => {
+          console.log("Added item to database:\n\t" + JSON.stringify(item));
+          console.log(
+            "\n--------------------------------------------------------------------\n"
+          );
+          res.json(item);
+        })
+        .catch((err) => {
+          console.log("Can't add item to database:\n\t" + err);
+          console.log(
+            "\n--------------------------------------------------------------------\n"
+          );
+          res.json({ error: "required field(s) missing" });
         });
-
-        if (!issue) {
-          return res.json({ error: "could not update", _id: _id });
-        }
-
-        res.json({ result: "sucessfully updated", _id: _id });
-      } catch (err) {
-        res.json({ error: "could not update", _id: _id });
-      }
     })
 
-    .delete(async function (req, res) {
+    .put(function (req, res) {
       let project = req.params.project;
-      const { _id } = req.body;
+      console.log("PUT project id:\n\t" + project);
 
-      if (!_id) {
-        return res.json({ error: "missing _id" });
+      let params = getParams(req);
+      console.log("PUT params:\n\t" + JSON.stringify(params));
+
+      if (params._id === undefined) {
+        console.log("PUT _id is null");
+        console.log(
+          "\n--------------------------------------------------------------------\n"
+        );
+        res.json({ error: "missing _id" });
+        return;
       }
 
-      try {
-        const result = await Issue.findByIdAndDelete(_id);
-
-        if (!result) {
-          return res.json({ error: "could not delete", _id: _id });
-        }
-
-        res.json({ result: "successfully deleted", _id: _id });
-      } catch (err) {
-        res.json({ error: "could not delete", _id: _id });
+      let { _id, ...updated } = params;
+      if (Object.keys(updated).length == 0) {
+        console.log("PUT updated params are empty");
+        console.log(
+          "\n--------------------------------------------------------------------\n"
+        );
+        res.json({ error: "no update field(s) sent", _id });
+        return;
       }
+
+      IssueModel.findByIdAndUpdate(
+        _id,
+        { ...updated, updated_on: new Date() },
+        { new: true }
+      )
+        .then((item) => {
+          if (!item) {
+            throw new Error("issue not found");
+          }
+          console.log("Updated item in database:\n\t" + JSON.stringify(item));
+          console.log(
+            "\n--------------------------------------------------------------------\n"
+          );
+          res.json({ result: "successfully updated", _id });
+        })
+        .catch((err) => {
+          console.log("Can't update item in database:\n\t" + err);
+          console.log(
+            "\n--------------------------------------------------------------------\n"
+          );
+          res.json({ error: "could not update", _id });
+        });
+    })
+
+    .delete(function (req, res) {
+      let project = req.params.project;
+      console.log("DELETE id:\n\t" + project);
+
+      let params = getParams(req);
+      console.log("DELETE params:\n\t" + JSON.stringify(params));
+
+      if (params._id === undefined) {
+        console.log("DELETE _id is null");
+        console.log(
+          "\n--------------------------------------------------------------------\n"
+        );
+        res.json({ error: "missing _id" });
+        return;
+      }
+
+      IssueModel.findByIdAndDelete({ project, ...params })
+        .then((item) => {
+          if (!item) {
+            throw new Error("issue not found");
+          }
+
+          console.log("Deleted item from database:\n\t" + JSON.stringify(item));
+          console.log(
+            "\n--------------------------------------------------------------------\n"
+          );
+          res.json({ result: "successfully deleted", _id: params._id });
+        })
+        .catch((err) => {
+          console.log("Can't delete item from database:\n\t" + err);
+          console.log(
+            "\n--------------------------------------------------------------------\n"
+          );
+          res.json({ error: "could not delete", _id: params._id });
+        });
     });
 };
+
+function getParams(req) {
+  if (Object.keys(req.body).length > 0) {
+    return req.body;
+  }
+
+  if (Object.keys(req.query).length > 0) {
+    return req.query;
+  }
+
+  return {};
+}
